@@ -1,222 +1,166 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+import geopandas as gpd
+from scipy.spatial import distance_matrix
+from shapely.geometry import LineString
 
+NODE_FILE = "./output/here_network/here_nodes.geojson"
+EDGE_FILE = "./output/here_network/here_edges.geojson"
+ZONE_FILE = "./data/contours_iris_france/CONTOURS-IRIS.shp"
 
-#################
-### FUNCTIONS ###
-#################
+IDF_DEP = ("75", "77", "78", "91", "92", "93", "94", "95")
+METRIC_CRS = "epsg:2154"
 
+# The zone centroids are connected to nodes chosen among the DIST_RANK closest nodes.
+DIST_RANK = 25
+# Number of lanes on the connectors.
+CONNECTOR_LANES = 1
+# Speed on the connectors, in km/h.
+CONNECTOR_SPEED = 30
 
-def haversine_np(lon1, lat1, lon2, lat2):
-    """
-    Calculate the great circle distance between two points
-    on the earth (specified in decimal degrees)
-    ----------------
-    lon1 : longitude of the first point (float)
-    lat1 : latitude of the first point (float)
-    lon2 : longitude of the first point (float)
-    lat2 : latitude of the first point (float)
-    All args must be of equal length.
-    ---------------------
-    """
-    lon1, lat1, lon2, lat2 = map(np.radians, [lon1, lat1, lon2, lat2])
+# File where the ZONE_ID -> NODE_ID map is saved.
+ZONE_ID_FILE = "./output/here_network/zone_id_map.csv"
+OUTPUT_NODE_FILE = "./output/here_network/here_nodes_with_zones.geojson"
+OUTPUT_EDGE_FILE = "./output/here_network/here_edges_with_connectors.geojson"
 
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
+print("Reading network files")
 
-    a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2
+nodes = gpd.read_file(NODE_FILE)
+edges = gpd.read_file(EDGE_FILE)
 
-    c = 2 * np.arcsin(np.sqrt(a))
-    km = 6367 * c
-    return km
+edges.to_crs(METRIC_CRS, inplace=True)
 
+nodes.to_crs(METRIC_CRS, inplace=True)
+nodes["x"] = nodes.centroid.x
+nodes["y"] = nodes.centroid.y
+node_coords = nodes[["x", "y"]].to_numpy()
 
-def geo_position(x_bari, y_bari, x, y):
-    """
-    This function gives for a point with coordinates (x,y)
-    its position geographic position (n,w,s,e) relative to
-    a barycenter with coordinates (x_bari,y_bari)
-    ----------
-    x : longitude of the point (float)
-    y : latitude of the point (float)
-    x_bari : longitude of the barycenter (float)
-    y_bari : latitude of the barycenter (float)
-    ----------
-    string
-    n: North
-    s: South
-    e: East
-    w: West
-    """
-    max_y = max(y_bari, y) + 1
-    max_x = max(x_bari, x) + 1
-    min_y = min(y_bari, y) - 1
-    min_x = min(x_bari, x) - 1
-    if (
-        y <= ((max_y - min_y) / (min_x - max_x)) * (x - x_bari) + y_bari
-        and y > ((min_y - max_y) / (min_x - max_x)) * (x - x_bari) + y_bari
-    ):
-        return "n"
+print("Computing node in/out-degree")
 
-    if (
-        y >= ((max_y - min_y) / (min_x - max_x)) * (x - x_bari) + y_bari
-        and y > ((min_y - max_y) / (min_x - max_x)) * (x - x_bari) + y_bari
-    ):
-        return "e"
+# The in-degree of a node is the number of edges whose target node is this node.
+# The out-degree of a node is the number of edges whose source node is this node.
+# We compute a in/out-degree weighted by number of lanes.
+in_degrees = edges.groupby("target")["lanes"].sum()
+in_degrees.name = "in_degree"
+out_degrees = edges.groupby("source")["lanes"].sum()
+out_degrees.name = "out_degree"
+nodes = nodes.merge(in_degrees, left_on="id", right_index=True, how="left")
+nodes = nodes.merge(out_degrees, left_on="id", right_index=True, how="left")
+nodes["in_degree"] = nodes["in_degree"].fillna(0).astype(np.int64)
+nodes["out_degree"] = nodes["out_degree"].fillna(0).astype(np.int64)
 
-    if (
-        y >= ((max_y - min_y) / (min_x - max_x)) * (x - x_bari) + y_bari
-        and y < ((min_y - max_y) / (min_x - max_x)) * (x - x_bari) + y_bari
-    ):
-        return "s"
+# Candidate nodes for in/out connectors.
+in_nodes = nodes.loc[nodes["in_degree"] > 0]
+out_nodes = nodes.loc[nodes["out_degree"] > 0]
 
-    if (
-        y <= ((max_y - min_y) / (min_x - max_x)) * (x - x_bari) + y_bari
-        and y < ((min_y - max_y) / (min_x - max_x)) * (x - x_bari) + y_bari
-    ):
-        return "w"
+print("Reading zones")
 
+zones = gpd.read_file(ZONE_FILE)
+zones = zones.loc[zones["INSEE_COM"].str[:2].isin(IDF_DEP)].copy()
+zones["CODE_IRIS"] = zones["CODE_IRIS"].astype(np.int64)
 
-################
-###  INPUTS  ###
-################
+# We ensure that zone ids are all distinct from node ids.
+max_node_id = nodes["id"].max()
+zones.set_index(np.arange(max_node_id + 1, max_node_id + len(zones) + 1), inplace=True)
+zones.index.name = "node_id"
+zones["CODE_IRIS"].to_csv(ZONE_ID_FILE)
 
-intersections_path = ".../.csv"
-zones_path = ".../.csv"
-links_path = ".../.csv"
-output_path = ".../links_connectors.csv"
+zones.to_crs(METRIC_CRS, inplace=True)
+zones["x"] = zones.centroid.x
+zones["y"] = zones.centroid.y
 
-max_speed_connection = 129
-min_capacity_connection = 1001
-among_closest = 15
-connectors_parameters = {"function": 1, "lanes": 5, "speed": 200, "capacity": 99999}
+print("Building connectors")
 
+quantile = DIST_RANK / len(nodes)
 
-##############
-### SCRIPT ###
-##############
+gradiants = [
+    {"name": "N", "filter": lambda theta: (theta > -45.0) & (theta < 45.0)},
+    {"name": "W", "filter": lambda theta: (theta > -135.0) & (theta < -45.0)},
+    {"name": "S", "filter": lambda theta: (theta < -135.0) | (theta > 135.0)},
+    {"name": "E", "filter": lambda theta: (theta > 45.0) & (theta < 135.0)},
+]
 
-print("Loading and preparing files...")
+out_connectors = list()
+in_connectors = list()
+next_id = edges["id"].max() + 1
+road_type = edges["road_type"].max() + 1
 
-# Load files
-df_intersections = pd.read_csv(intersections_path)
-df_zones = pd.read_csv(zones_path)
-df_links = pd.read_csv(links_path)
+n = len(zones) // 100
+for i, (zone_id, zone) in enumerate(zones.iterrows()):
+    if i % n == 0:
+        print("{} %".format(i // n))
+    distances = distance_matrix(node_coords, np.array([[zone["x"], zone["y"]]]))
+    dist_threshold = np.quantile(distances, quantile)
 
+    mask = distances <= dist_threshold
+    candidate_nodes = nodes.loc[mask].copy()
+    candidate_nodes["distance"] = distances[mask]
+    candidate_nodes.sort_values("distance", inplace=True)
 
-# Restrict available link to those with:
-# - A capacity higher than min_capacity_connection
-df_links_ = df_links[(df_links["capacity"] > min_capacity_connection)]
-# - A speed lesser than max_speed_connection
-df_links_ = df_links[(df_links["speed"] < max_speed_connection)]
+    dx = candidate_nodes["x"] - zone["x"]
+    dy = candidate_nodes["y"] - zone["y"]
+    candidate_nodes["angle"] = np.degrees(np.arctan2(dy, dx))
 
-print("Compute capacity for each intersection...")
+    for gradiant in gradiants:
+        mask = gradiant["filter"](candidate_nodes["angle"])
+        if np.all(~mask):
+            # No candidate node in this gradiant.
+            continue
+        # Select the closest node among all the nodes that maximize in-degree.
+        in_node_id = candidate_nodes.loc[mask, "in_degree"].idxmax()
+        in_node = candidate_nodes.loc[in_node_id]
+        if in_node["in_degree"] > 0:
+            geom = LineString([zone["geometry"].centroid.coords[0], in_node["geometry"].coords[0]])
+            connector = {
+                "id": next_id,
+                "name": "Out connector {} -> {}".format(zone["CODE_IRIS"], in_node_id),
+                "road_type": road_type,
+                "lanes": CONNECTOR_LANES,
+                "speed": CONNECTOR_SPEED,
+                "source": zone_id,
+                "target": in_node_id,
+                "LINK_ID": 0,
+                "geometry": geom,
+                "length": geom.length,
+            }
+            next_id += 1
+            out_connectors.append(connector)
 
-# compute the out/in road capacity
-for index, row in df_intersections.iterrows():
+        # Select the closest node among all the nodes that maximize out-degree.
+        out_node_id = candidate_nodes.loc[mask, "out_degree"].idxmax()
+        out_node = candidate_nodes.loc[out_node_id]
+        if out_node["out_degree"] > 0:
+            geom = LineString([out_node["geometry"].coords[0], zone["geometry"].centroid.coords[0]])
+            connector = {
+                "id": next_id,
+                "name": "Out connector {} -> {}".format(zone["CODE_IRIS"], out_node_id),
+                "road_type": road_type,
+                "lanes": CONNECTOR_LANES,
+                "speed": CONNECTOR_SPEED,
+                "source": out_node_id,
+                "target": zone_id,
+                "LINK_ID": 0,
+                "geometry": geom,
+                "length": geom.length,
+            }
+            next_id += 1
+            in_connectors.append(connector)
 
-    # Compute the out-capacity for each link
-    df = df_links_[df_links_["origin"] == row["id"]]
-    out_capacity = (df["capacity"] * df["lanes"]).sum()
+print("Saving edges")
 
-    # Compute the in-capacity for each link
-    df = df_links_[df_links_["destination"] == row["id"]]
-    in_capacity = (df["capacity"] * df["lanes"]).sum()
+out_connectors = gpd.GeoDataFrame(out_connectors, crs=edges.crs)
+in_connectors = gpd.GeoDataFrame(in_connectors, crs=edges.crs)
+edges = gpd.GeoDataFrame(pd.concat((edges, out_connectors, in_connectors), ignore_index=True))
+edges.to_file(OUTPUT_EDGE_FILE, driver='GeoJSON')
 
-    # Write the in/out-capacity of each intersection in the intersection file
-    df_intersections.loc[index, "out_capacity"] = out_capacity
-    df_intersections.loc[index, "in_capacity"] = in_capacity
+print("Saving nodes")
 
+nodes.drop(columns=['x', 'y', 'in_degree', 'out_degree'], inplace=True)
+nodes['is_zone'] = False
 
-# Create a dataframe of distance between each intersection and each zones
-print("Create the connectors...")
+zones = zones['geometry'].reset_index().rename(columns={'node_id': 'id'})
+zones['geometry'] = zones.centroid
+zones['is_zone'] = True
 
-i = 1000000
-n = len(df_zones["id"])
-n_i = 0
-
-for _, r in df_zones.iterrows():
-    df_intersections_ = df_intersections.copy()
-    df_intersections_ = df_intersections_[df_intersections_["in_capacity"] != 0]
-    # Compute the distance between the center and each intersections
-    df_intersections_["dist"] = haversine_np(
-        r["x"], r["y"], df_intersections_["x"], df_intersections_["y"]
-    )
-    df_intersections_ = df_intersections_.sort_values(by="dist")
-    df_intersections_ = df_intersections_.head(among_closest)
-
-    # Compute the polar position between the center and each point
-    df_intersections_["4_zones"] = df_intersections_.apply(
-        lambda x: geo_position(r["x"], r["y"], x["x"], x["y"]), axis=1
-    )
-    # Create connectors for each polar position
-    groups = df_intersections_.groupby(["4_zones"])
-
-    for g, df in groups:
-        # Create out connectors
-        df_ = df[df["in_capacity"] == df["in_capacity"].max()]
-        df_ = df_.head(1)
-        df_links = df_links.append(
-            {
-                "id": i,
-                "name": "connector from " + str(r["id"]),
-                "function": connectors_parameters["function"],
-                "lanes": connectors_parameters["lanes"],
-                "speed": connectors_parameters["speed"],
-                "length": float(df_["dist"].mean()),
-                "capacity": connectors_parameters["capacity"],
-                "origin": int(df_["id"]),
-                "destination": int(r["id"]),
-                "osm_id": "",
-            },
-            ignore_index=True,
-        )
-        i += 1
-
-for _, r in df_zones.iterrows():
-    df_intersections_ = df_intersections.copy()
-    df_intersections = df_intersections[df_intersections["in_capacity"] != 0]
-
-    # Compute the distance between the center and each intersections
-    df_intersections_["dist"] = haversine_np(
-        r["x"], r["y"], df_intersections_["x"], df_intersections_["y"]
-    )
-    df_intersections_ = df_intersections_.sort_values(by="dist")
-    df_intersections_ = df_intersections_.head(among_closest)
-
-    # Compute the polar position between the center and each point
-    df_intersections_["4_zones"] = df_intersections_.apply(
-        lambda x: geo_position(r["x"], r["y"], x["x"], x["y"]), axis=1
-    )
-    # Create connectors for each polar position
-    groups = df_intersections_.groupby(["4_zones"])
-
-    for g, df in groups:
-        df_ = df[df["out_capacity"] == df["out_capacity"].max()]
-        df_ = df_.head(1)
-        # Create in connectors
-        df_links = df_links.append(
-            {
-                "id": i,
-                "name": "connector to " + str(float(r["id"])),
-                "function": connectors_parameters["function"],
-                "lanes": connectors_parameters["lanes"],
-                "speed": connectors_parameters["speed"],
-                "length": float(df_["dist"].mean()),
-                "capacity": connectors_parameters["capacity"],
-                "origin": int(r["id"]),
-                "destination": int(df_["id"].mean()),
-                "osm_id": "",
-            },
-            ignore_index=True,
-        )
-        i += 1
-
-    n_i += 1
-    print(str(n_i) + "/" + str(n))
-
-###############
-### OUTPUTS ###
-###############
-
-df_links.to_csv(output_path)
+nodes = gpd.GeoDataFrame(pd.concat((nodes, zones), ignore_index=True))
+nodes.to_file(OUTPUT_NODE_FILE, driver='GeoJSON')

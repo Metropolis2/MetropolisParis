@@ -10,7 +10,7 @@ from shapely.geometry import Point, LineString, MultiLineString
 from shapely.ops import linemerge
 
 STREET_FILE = "./data/here_network/streets/Streets.shp"
-OUTPUT_DIR = "./output/"
+OUTPUT_DIR = "./output/here_network/"
 
 # Max FUNC_CLASS level allowed.
 MAX_LEVEL = 5
