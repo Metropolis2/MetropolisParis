@@ -5,25 +5,32 @@ from shapely.geometry import Point
 import pandas as pd
 import geopandas as gpd
 
+# Path to the directory where the synthetic population files from Eqasim are stored.
 EQASIM_OUTPUT = "/home/ljavaudin/Projects/MetropolisIDF/data/synthetic_population/"
+# Path to the file where the mapping between IRIS zone ids and node ids is stored.
+ZONE_ID_FILE = "./output/zone_id_map.csv"
+# Path to the IRIS Shapefile.
 IRIS_FILE = "/home/ljavaudin/Projects/MetropolisIDF/data/contours_iris_france/"
+# Départements in the studied area, used to filter IRIS zones.
 IDF_DEP = ("75", "77", "78", "91", "92", "93", "94", "95")
+# Output file of the generated trips.
 OUTPUT_FILENAME = "/home/ljavaudin/Projects/MetropolisIDF/output/trips.csv"
 
 
 def get_households():
     """Returns a pd.DataFrame with a description of the households in the population."""
-    df = pd.read_csv(
+    print("Reading synthetic population households")
+    return pd.read_csv(
         os.path.join(EQASIM_OUTPUT, "ile_de_france_households.csv"),
         sep=";",
         usecols=["household_id", "income"],
     )
-    return df
 
 
 def get_persons():
     """Returns a pd.DataFrame with a description of the persons in the population."""
-    df = pd.read_csv(
+    print("Reading synthetic population persons")
+    return pd.read_csv(
         os.path.join(EQASIM_OUTPUT, "ile_de_france_persons.csv"),
         sep=";",
         usecols=[
@@ -37,11 +44,15 @@ def get_persons():
             #  "has_pt_subscription",
         ],
     )
-    return df
+
+
+def get_zone_mapping():
+    return pd.read_csv(ZONE_ID_FILE)
 
 
 def get_trips(mode=["car"], start_time=0.0, end_time=86400.0):
     """Returns a gpd.GeoDataFrame with the list of trips, for the filtered modes and time."""
+    print("Reading synthetic population trips")
     gdf = gpd.read_file(os.path.join(EQASIM_OUTPUT, "ile_de_france_trips.gpkg"))
     # Filter trips by car between 6AM and 12 PM.
     gdf = gdf.loc[
@@ -70,6 +81,7 @@ def get_iris_polygons(departements):
     """Returns a gpd.GeoDataFrame with the geometries of the IRIS zones in the selected
     départements.
     """
+    print("Reading IRIS zones")
     gdf = gpd.read_file(IRIS_FILE)
     gdf["dep"] = gdf["INSEE_COM"].str[:2]
     gdf = gdf.loc[gdf["dep"].isin(departements)]
@@ -93,7 +105,7 @@ def find_iris_origin_destination(trip_gdf, iris_gdf):
     destinations["x"] = destinations.geometry.x
     destinations["y"] = destinations.geometry.y
     print("Finding trips' IRIS zone")
-    n = len(iris_gdf) // 100
+    n = len(iris_gdf) // 99
     for i, (_, row) in enumerate(iris_gdf.iterrows()):
         if i % n == 0:
             print("{} %".format(i // n))
@@ -130,10 +142,38 @@ if __name__ == "__main__":
     mask = trip_gdf["iris_origin"] == trip_gdf["iris_destination"]
     print("Removing {} intra-zonal trips".format(mask.sum()))
     trip_gdf = trip_gdf.loc[~mask]
+    # Keeping one trip per individual.
+    print("Keeping one trip per person")
+    tot_tt = trip_gdf["travel_time"].sum()
+    indices = trip_gdf.groupby("person_id")["travel_time"].idxmax()
+    trip_gdf = trip_gdf.loc[indices].copy()
+    tot_tt2 = trip_gdf["travel_time"].sum()
+    print("{:.2f} % total travel time removed".format(100 * (tot_tt - tot_tt2) / tot_tt))
+    # Set source and target node id of the trips.
+    zone_mapping = get_zone_mapping()
+    trip_gdf = (
+        trip_gdf.merge(
+            zone_mapping.loc[zone_mapping["in"], ["node_id", "CODE_IRIS"]],
+            left_on="iris_destination",
+            right_on="CODE_IRIS",
+        )
+        .rename(columns={"node_id": "destination_id"})
+        .drop(columns="CODE_IRIS")
+    )
+    trip_gdf = (
+        trip_gdf.merge(
+            zone_mapping.loc[~zone_mapping["in"], ["node_id", "CODE_IRIS"]],
+            left_on="iris_origin",
+            right_on="CODE_IRIS",
+        )
+        .rename(columns={"node_id": "origin_id"})
+        .drop(columns="CODE_IRIS")
+    )
     # Merge.
     household_df = get_households()
     person_df = get_persons()
     trip_gdf = trip_gdf.merge(person_df, on="person_id", how="left")
     trip_gdf = trip_gdf.merge(household_df, on="household_id", how="left")
     trip_gdf.drop(columns=["origin", "destination"], inplace=True)
+    print("Writing data")
     trip_gdf.to_csv(OUTPUT_FILENAME, index=False)

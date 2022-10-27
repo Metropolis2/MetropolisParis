@@ -4,23 +4,25 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 import networkx as nx
-
-import shapefile
+import fiona
 from shapely.geometry import Point, LineString, MultiLineString
 from shapely.ops import linemerge
 
+# Path to shapefile where HERE network data is stored.
 STREET_FILE = "./data/here_network/streets/Streets.shp"
+# Path to directory where the output files should be stored.
 OUTPUT_DIR = "./output/here_network/"
-
+# CRS to use for computation of edge length.
+METRIC_CRS = "epsg:2154"
 # Max FUNC_CLASS level allowed.
-MAX_LEVEL = 5
-
-streets = shapefile.Reader(STREET_FILE)
+MAX_LEVEL = 4
 
 print("Reading edges...")
 
+streets = fiona.open(STREET_FILE)
+
 # Read records as a DataFrame.
-fields = [
+columns = [
     "LINK_ID",
     "ST_NAME",
     "REF_IN_ID",
@@ -31,15 +33,18 @@ fields = [
     "FROM_LANES",
     "TO_LANES",
     "DIR_TRAVEL",
-    "AR_AUTO",
-    "PUB_ACCESS",
+    "geometry",
 ]
-shapeRecs = list()
-for rec in streets.iterRecords(fields=["FUNC_CLASS", "AR_AUTO", "PUB_ACCESS"]):
-    if int(rec["FUNC_CLASS"]) <= MAX_LEVEL and rec["AR_AUTO"] == "Y" and rec["PUB_ACCESS"] == "Y":
-        shapeRec = streets.shapeRecord(rec.oid, fields=fields)
-        shapeRecs.append(shapeRec)
-gdf = gpd.GeoDataFrame.from_features(shapeRecs)
+records = list()
+for rec in streets:
+    # Filter for edges with car access and valid `FUNC_CLASS`.
+    if (
+        int(rec["properties"]["FUNC_CLASS"]) <= MAX_LEVEL
+        and rec["properties"]["AR_AUTO"] == "Y"
+        and rec["properties"]["PUB_ACCESS"] == "Y"
+    ):
+        records.append(rec)
+gdf = gpd.GeoDataFrame.from_features(records, crs=streets.crs["init"], columns=columns)
 
 # Add backward roads.
 N = len(gdf)
@@ -67,10 +72,7 @@ gdf.loc[gdf["DIR_TRAVEL"] == "F", "speed"] = gdf["FR_SPD_LIM"].astype(float)
 gdf.loc[gdf["DIR_TRAVEL"] == "T", "speed"] = gdf["TO_SPD_LIM"].astype(float)
 
 # Compute road length.
-gdf.set_crs(epsg=4326, inplace=True)
-gdf.to_crs(epsg=27561, inplace=True)
-gdf["length"] = gdf.length
-gdf.to_crs(epsg=4326, inplace=True)
+gdf["length"] = gdf.to_crs(METRIC_CRS).length
 
 print("Reversing geometries for backward edges...")
 
@@ -89,20 +91,8 @@ gdf["id"] = np.arange(1, len(gdf) + 1)
 gdf.set_index("id", drop=False, inplace=True)
 gdf.rename(columns={"ST_NAME": "name", "FUNC_CLASS": "road_type"}, inplace=True)
 gdf["road_type"] = gdf["road_type"].astype(int)
-gdf = gdf[
-    [
-        "id",
-        "name",
-        "road_type",
-        "lanes",
-        "length",
-        "speed",
-        "source",
-        "target",
-        "LINK_ID",
-        "geometry",
-    ]
-]
+gdf.drop(columns=['REF_IN_ID', 'NREF_IN_ID', 'FR_SPD_LIM', 'TO_SPD_LIM', 'FROM_LANES', 'TO_LANES',
+                  'DIR_TRAVEL'], inplace=True)
 
 print("Building graph...")
 
@@ -187,7 +177,9 @@ for key, row in gdf.iterrows():
 nodes_gdf.set_geometry([points[node] for node in nodes_gdf["id"]], inplace=True)
 nodes_gdf = nodes_gdf.set_crs(epsg=4326)
 
+print('Number of nodes: {}'.format(len(nodes_gdf)))
+
 print("Saving the results...")
 
-nodes_gdf.to_file(os.path.join(OUTPUT_DIR, "here_nodes.geojson"), driver="GeoJSON")
-gdf.to_file(os.path.join(OUTPUT_DIR, "here_edges.geojson"), driver="GeoJSON")
+nodes_gdf.to_file(os.path.join(OUTPUT_DIR, "here_nodes.fgb"), driver="FlatGeobuf")
+gdf.to_file(os.path.join(OUTPUT_DIR, "here_edges.fgb"), driver="FlatGeobuf")
