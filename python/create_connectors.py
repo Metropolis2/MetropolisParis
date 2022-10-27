@@ -1,4 +1,3 @@
-from collections import defaultdict
 import os
 
 import numpy as np
@@ -221,7 +220,7 @@ for i, (zone_id, zone) in enumerate(zones.iterrows()):
             node = valid_nodes.iloc[0]
             node_id = node.name
             geom = LineString([(rep_point.x, rep_point.y), (node["x"], node["y"])])
-            if node["zone_distance"] > 0.0:
+            if node["zone_distance"] > 0.0 or mean_distances.size == 0:
                 length = node["zone_distance"] + zone_mean_distance
             else:
                 length = node["mean_distance"]

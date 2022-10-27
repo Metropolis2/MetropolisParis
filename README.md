@@ -73,3 +73,29 @@ Details:
 - Intra-zonal trips (trips whose origin and destination zone is the same) are removed because they are not used in Metropolis.
 - For each person, only the trip with the largest travel time is kept (more than 82 % of total travel time is kept).
   When Metropolis will be able to run with intermediary stops, all the trips could be kept.
+
+### Step 4: Generate Metropolis input
+
+- Script: `python/write_metropolis_input.py`
+- Input:
+  - CSV file with the list of trips to generate (from Step 3)
+  - FlatGeobuf file with the edges of the road network (from Step 2)
+- Output:
+  - JSON file with the characteristics of the network, ready to be read by the Metropolis simulator
+  - JSON file with the characteristics of the agents, ready to be read by the Metropolis simulator
+
+To run the Metropolis simulator, three JSON files are required with the agents, the network and the parameters.
+(In the future, the Metropolis simulator will be able to run from an interface that does not require the user to write these raw files.)
+
+Details:
+
+- The speed-density function of the edges is set to `FreeFlow` (for now).
+- The bottleneck outflow of the edges is set to `Inf` (for now).
+- All agents have the same vehicle, with a length of 100 meters and a passenger-car equivalent of 10 units.
+  This is to reflect the fact that we only use a sample of 10 % of the population.
+- The value of time of all the agents is set to 10 € (for now).
+- The beta and gamma parameters of all the agents are set to 5 € and 20 €, respectively (for now).
+- The desired arrival time of the agents for their trip is set to the arrival time reported from the synthetic population.
+- The delta parameters (length of the desired arrival time window) is set to zero for all the agents.
+- The departure time is fixed to the departure time reported from the synthetic population, for all trips (for now).
+- Mode choice is disabled: all agents travel by car.

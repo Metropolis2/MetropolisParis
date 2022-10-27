@@ -1,0 +1,37 @@
+{
+  "period": [21600.0, 43200.0],
+  "learning_model": {
+    "type": "Exponential",
+    "values": {
+      "alpha": 0.8
+    }
+  },
+  "stopping_criteria": [
+    {
+        "type": "MaxIteration",
+        "values": 1
+    },
+    {
+        "type": "DepartureTime",
+        "values": [0.1, 0.0]
+    }
+  ],
+  "update_ratio": 1.0,
+  "random_seed": 13081996,
+  "network": {
+    "road_network": {
+      "weight_simplification": {
+        "type": "Interval",
+        "values": 60.0
+      },
+      "edge_simplification": {
+        "type": "Interval",
+        "values": 60.0
+      },
+      "search_space_simplification": {
+        "type": "Interval",
+        "values": 60.0
+      }
+    }
+  }
+}
