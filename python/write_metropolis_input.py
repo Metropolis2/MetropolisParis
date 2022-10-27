@@ -64,10 +64,10 @@ trips = pd.read_csv(TRIPS_FILE)
 print("Generating agents")
 agents = list()
 for key, row in trips.iterrows():
-    alpha = 10.0
-    beta = 5.0
-    gamma = 20.0
-    delta = 0.0
+    alpha = 10.0  # in euros / h
+    beta = 5.0  # in euros / h
+    gamma = 20.0  # in euros / h
+    delta = 0.0  # in seconds
     t_star = row["arrival_time"]
     departure_time_model = {
         "type": "Constant",
@@ -81,7 +81,7 @@ for key, row in trips.iterrows():
             "vehicle": 0,
             "utility_model": {
                 "type": "Proportional",
-                "values": -alpha,
+                "values": -alpha / 3600.0,
             },
             "departure_time_model": departure_time_model,
         },
@@ -91,8 +91,8 @@ for key, row in trips.iterrows():
         "schedule_utility": {
             "type": "AlphaBetaGamma",
             "values": {
-                "beta": beta,
-                "gamma": gamma,
+                "beta": beta / 3600.0,
+                "gamma": gamma / 3600.0,
                 "t_star_high": t_star + delta / 2.0,
                 "t_star_low": t_star - delta / 2.0,
             },

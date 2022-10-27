@@ -8,12 +8,12 @@
   },
   "stopping_criteria": [
     {
-        "type": "MaxIteration",
-        "values": 1
+      "type": "MaxIteration",
+      "values": 1
     },
     {
-        "type": "DepartureTime",
-        "values": [0.1, 0.0]
+      "type": "DepartureTime",
+      "values": [0.1, 0.0]
     }
   ],
   "update_ratio": 1.0,
