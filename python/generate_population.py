@@ -15,6 +15,8 @@ IRIS_FILE = "/home/ljavaudin/Projects/MetropolisIDF/data/contours_iris_france/"
 IDF_DEP = ("75", "77", "78", "91", "92", "93", "94", "95")
 # Output file of the generated trips.
 OUTPUT_FILENAME = "/home/ljavaudin/Projects/MetropolisIDF/output/trips.csv"
+# List of modes used to filter trips.
+MODE = ["car"]
 
 
 def get_households():
@@ -50,16 +52,12 @@ def get_zone_mapping():
     return pd.read_csv(ZONE_ID_FILE)
 
 
-def get_trips(mode=["car"], start_time=0.0, end_time=86400.0):
+def get_trips():
     """Returns a gpd.GeoDataFrame with the list of trips, for the filtered modes and time."""
     print("Reading synthetic population trips")
     gdf = gpd.read_file(os.path.join(EQASIM_OUTPUT, "ile_de_france_trips.gpkg"))
-    # Filter trips by car between 6AM and 12 PM.
-    gdf = gdf.loc[
-        (gdf["departure_time"] >= start_time)
-        & (gdf["arrival_time"] <= end_time)
-        & (gdf["mode"].isin(mode))
-    ].copy()
+    # Filter trips with a valid mode.
+    gdf = gdf.loc[gdf["mode"].isin(MODE)].copy()
     gdf["purpose"] = gdf["preceding_purpose"] + " -> " + gdf["following_purpose"]
     gdf["travel_time"] = gdf["arrival_time"] - gdf["departure_time"]
     gdf["origin"] = gdf.geometry.apply(lambda g: Point(g.coords[0]))
@@ -135,20 +133,9 @@ def find_iris_origin_destination(trip_gdf, iris_gdf):
 
 
 if __name__ == "__main__":
-    trip_gdf = get_trips(mode=["car"], start_time=6.0 * 3600.0, end_time=12.0 * 3600.0)
+    trip_gdf = get_trips()
     iris_gdf = get_iris_polygons(IDF_DEP)
     trip_gdf = find_iris_origin_destination(trip_gdf, iris_gdf)
-    # Remove intra-zonal trips.
-    mask = trip_gdf["iris_origin"] == trip_gdf["iris_destination"]
-    print("Removing {} intra-zonal trips".format(mask.sum()))
-    trip_gdf = trip_gdf.loc[~mask]
-    # Keeping one trip per individual.
-    print("Keeping one trip per person")
-    tot_tt = trip_gdf["travel_time"].sum()
-    indices = trip_gdf.groupby("person_id")["travel_time"].idxmax()
-    trip_gdf = trip_gdf.loc[indices].copy()
-    tot_tt2 = trip_gdf["travel_time"].sum()
-    print("{:.2f} % total travel time removed".format(100 * (tot_tt - tot_tt2) / tot_tt))
     # Set source and target node id of the trips.
     zone_mapping = get_zone_mapping()
     trip_gdf = (

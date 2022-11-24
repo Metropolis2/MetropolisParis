@@ -65,20 +65,29 @@ Details:
 - Output: CSV file with a list of trip, including the origin / destination IRIS zone and node id and the characteristics of the agent
 
 The trips are generated using a synthetic population for Île-de-France (built with various datasets such as INSEE census, transport surveys and infrastructure databases).
-For this study, a synthetic population representing 10 % of the total population is used.
+
+### Step 4: Filter the population
+
+- Script: `python/filter_population.py`
+- Input: CSV file with a list of trips (from Step 3)
+- Output: CSV file with the filtered list of trips
+
+The trips generated in Step 3 are filtered to keep only the trips that should be simulated.
+Trips can be filtered according to departure time, arrival time and mode.
+Optionnally, the intra-zonal trips (trips whose origin and destination zone is the same) can be removed and only the longest trip of each individual can be kept.
 
 Details:
 
-- We filter trips by car that occurs within the time window 6AM--12PM.
-- Intra-zonal trips (trips whose origin and destination zone is the same) are removed because they are not used in Metropolis.
-- For each person, only the trip with the largest travel time is kept (more than 82 % of total travel time is kept).
-  When Metropolis will be able to run with intermediary stops, all the trips could be kept.
+- We filter trips by car that occurs within the time window 3AM--10AM.
+- Intra-zonal trips are removed because they are not used in Metropolis (they represent 7.73 % of total travel time, mostly because of round trips).
+- For each person, only the trip with the largest travel time is kept (removing 9.36 % of remaining total travel time).
+  When Metropolis will be able to run with intermediary stops, these trips could be kept.
 
-### Step 4: Generate Metropolis input
+### Step 5: Generate Metropolis input
 
 - Script: `python/write_metropolis_input.py`
 - Input:
-  - CSV file with the list of trips to generate (from Step 3)
+  - CSV file with the list of trips to generate (from Step 4)
   - FlatGeobuf file with the edges of the road network (from Step 2)
 - Output:
   - JSON file with the characteristics of the network, ready to be read by the Metropolis simulator
@@ -87,15 +96,29 @@ Details:
 To run the Metropolis simulator, three JSON files are required with the agents, the network and the parameters.
 (In the future, the Metropolis simulator will be able to run from an interface that does not require the user to write these raw files.)
 
+The behavior of the script can be changed through many global variables:
+
+- Length and passenger car equivalent of the agents' vehicle (they all have the same vehicle type).
+- Simulated period.
+- Capacity of the entry and exit bottlenecks of the edge (and a boolean to enable/disable them).
+- Parameters of the alpha-beta-gamma model.
+- Whether to use exogenous departure time (from the synthetic population input) or endogenous departure time (with a given μ).
+
 Details:
 
 - The speed-density function of the edges is set to `FreeFlow` (for now).
-- The bottleneck outflow of the edges is set to `Inf` (for now).
-- All agents have the same vehicle, with a length of 100 meters and a passenger-car equivalent of 10 units.
-  This is to reflect the fact that we only use a sample of 10 % of the population.
-- The value of time of all the agents is set to 10 € (for now).
-- The beta and gamma parameters of all the agents are set to 5 € and 20 €, respectively (for now).
 - The desired arrival time of the agents for their trip is set to the arrival time reported from the synthetic population.
-- The delta parameters (length of the desired arrival time window) is set to zero for all the agents.
-- The departure time is fixed to the departure time reported from the synthetic population, for all trips (for now).
 - Mode choice is disabled: all agents travel by car.
+
+### Extra script: Read Metropolis output
+
+- Script: `python/read_metropolis_output.py`
+- Input:
+  - Compressed JSON file with the agent-specific results (from the simulator Metropolis)
+  - FlatGeobuf file with the edges of the road network (from Step 2)
+
+This script provides functions to analyse the output of the simulator.
+
+Currently, the only function provided is:
+
+- `get_agent_map`: Function to draw a map with the path taken by an agent during the last iteration. The color of the edges represent the congestion.
