@@ -9,12 +9,13 @@ Each Python script can be configured through global variables at the beginning o
 
 ### Step 1: Pre-process the road network
 
-- Script: `python/get_here_network.py`
-- Input: HERE Streets Shapefile
+- Script: `python/get_here_network.py` or `python/get_osm_network.py`
+- Input: HERE Streets Shapefile or OpenStreetMap PBF File
 - Output: FlatGeobuf file with node ids and geometries and FlatGeobuf file with edge ids, geometries and characteristics
 
-The nodes and edges of the road network are read from a HERE Shapefile.
-The resulting graph has 177152 nodes and 308027 edges.
+The nodes and edges of the road network are read from HERE or OpenStreetMap data.
+
+With HERE data, the resulting graph has 177152 nodes and 308027 edges.
 
 Details:
 
@@ -60,7 +61,7 @@ Details:
 - Script: `python/generate_population.py`
 - Input:
   - Output of the [synthetic population generation](https://github.com/eqasim-org/ile-de-france)
-  - IGN Shapefile of IRIS zones
+  - IGN Shapefile of [IRIS zones](https://geoservices.ign.fr/contoursiris)
   - CSV file that maps IRIS zone ids to road-network node ids (from Step 2)
 - Output: CSV file with a list of trip, including the origin / destination IRIS zone and node id and the characteristics of the agent
 
@@ -117,8 +118,13 @@ Details:
   - Compressed JSON file with the agent-specific results (from the simulator Metropolis)
   - FlatGeobuf file with the edges of the road network (from Step 2)
 
-This script provides functions to analyse the output of the simulator.
+This script provides many functions to analyse the output of the simulator (draw maps, generate graphs, etc.).
 
-Currently, the only function provided is:
+### Extra script: Find origin/destination zone from coordinates
 
-- `get_agent_map`: Function to draw a map with the path taken by an agent during the last iteration. The color of the edges represent the congestion.
+- Script: `python/find_zone.py`
+- Input:
+  - IGN Shapefile of IRIS zones
+  - CSV file that maps IRIS zone ids to road-network node ids (from Step 2)
+
+This script provides a function that returns the IRIS zone and Metropolis zone from geographic coordinates.

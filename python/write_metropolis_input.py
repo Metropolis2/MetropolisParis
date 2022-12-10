@@ -6,41 +6,68 @@ import pandas as pd
 import geopandas as gpd
 
 # Path to the directory where the node and edge files are stored.
-ROAD_NETWORK_DIR = "./output/here_network/"
+ROAD_NETWORK_DIR = "./output/osm_network/"
 # Path to the file where the trip data is stored.
-TRIPS_FILE = "./output/trips_filtered.csv"
+TRIPS_FILE = "./output/trips_paris_filtered.csv"
 # Path to the directory where the simulation input should be stored.
-OUTPUT_DIR = "./output/server_runs/next_run/"
+OUTPUT_DIR = "./output/paris_run/"
 # Vehicle length in meters.
-VEHICLE_LENGTH = 15.0 * 10.0
+VEHICLE_LENGTH = 10.0 * 10.0
 # Vehicle passenger-car equivalent.
-VEHICLE_PCE = 15.0 * 1.0
+VEHICLE_PCE = 10.0 * 1.0
 # Period in which the departure time of the trip is chosen.
 PERIOD = [3.0 * 3600.0, 10.0 * 3600.0]
 # Capacity of the different edge road types.
 CAPACITY = {
-    0: None,  # Infinite capacity.
+    0: None,
     1: 2000,
-    2: 1500,
-    3: 800,
-    4: 600,
+    2: 2000,
+    3: 1500,
+    4: 800,
+    5: 600,
+    6: 600,
+    7: 600,
+    8: 1500,
+    9: 1500,
+    10: 1500,
+    11: 800,
+    12: 600,
+    13: 300,
+    14: 300,
+    15: 300,
 }
 # If True, enable entry bottleneck using capacity defined by `CAPACITY`.
 ENTRY_BOTTLENECK = True
 # If True, enable exit bottleneck using capacity defined by `CAPACITY`.
 EXIT_BOTTLENECK = False
 # Value of time in the car, in euros / hour.
-ALPHA = 10.0
+ALPHA = 15.0
 # Value of arriving early at destination, in euros / hour.
-BETA = 5.0
+BETA = 7.5
 # Value of arriving late at destination, in euros / hour.
-GAMMA = 20.0
+GAMMA = 30.0
 # Time window for on-time arrival, in seconds.
 DELTA = 0.0
 # If True, departure time is endogenous.
 ENDOGENOUS_DEPARTURE_TIME = True
 # Value of μ for the departure-time model (if ENDOGENOUS_DEPARTURE_TIME is True).
-DT_MU = 2.0
+DT_MU = 3.0
+# How t* is computed given the observed arrival time.
+def T_STAR_FUNC(ta):
+    return ta
+CONST_TT = {
+    3: 10,
+    4: 15,
+    5: 20,
+    6: 25,
+    7: 30,
+    8: 35,
+    9: 40,
+    10: 45,
+}
+# Seed for the random number generators.
+SEED = 13081996
+RNG = np.random.default_rng(SEED)
 
 # Parameters to use for the simulation.
 PARAMETERS = {
@@ -54,11 +81,11 @@ PARAMETERS = {
     "stopping_criteria": [
         {
             "type": "MaxIteration",
-            "value": 100,
+            "value": 5,
         },
     ],
     "update_ratio": 1.0,
-    "random_seed": 13081996,
+    "random_seed": SEED,
     "network": {
         "road_network": {
             "recording_interval": 300.0,
@@ -92,7 +119,7 @@ for _, row in edges.iterrows():
         row["source_index"],
         row["target_index"],
         {
-            "id": int(row["LINK_ID"]),
+            "id": int(row["index"]),
             "base_speed": float(row["speed"]) / 3.6,
             "length": float(row["length"]),
             "lanes": int(row["lanes"]),
@@ -106,6 +133,8 @@ for _, row in edges.iterrows():
             edge[2]["bottleneck_inflow"] = capacity / 3600.0
         if EXIT_BOTTLENECK:
             edge[2]["bottleneck_outflow"] = capacity / 3600.0
+    if const_tt := CONST_TT.get(row["neighbor_count"]):
+        edge[2]["constant_travel_time"] = const_tt
     metro_edges.append(edge)
 
 graph = {
@@ -131,10 +160,10 @@ print("Reading trips")
 trips = pd.read_csv(TRIPS_FILE)
 
 print("Generating agents")
-random_u = iter(np.random.uniform(size=len(trips)))
+random_u = iter(RNG.uniform(size=len(trips)))
 agents = list()
 for key, row in trips.iterrows():
-    t_star = row["arrival_time"]
+    t_star = T_STAR_FUNC(row["arrival_time"])
     if ENDOGENOUS_DEPARTURE_TIME:
         departure_time_model = {
             "type": "ContinuousChoice",

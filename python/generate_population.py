@@ -8,13 +8,13 @@ import geopandas as gpd
 # Path to the directory where the synthetic population files from Eqasim are stored.
 EQASIM_OUTPUT = "/home/ljavaudin/Projects/MetropolisIDF/data/synthetic_population/"
 # Path to the file where the mapping between IRIS zone ids and node ids is stored.
-ZONE_ID_FILE = "./output/zone_id_map.csv"
+ZONE_ID_FILE = "./output/zone_id_map_paris.csv"
 # Path to the IRIS Shapefile.
 IRIS_FILE = "/home/ljavaudin/Projects/MetropolisIDF/data/contours_iris_france/"
 # Départements in the studied area, used to filter IRIS zones.
-IDF_DEP = ("75", "77", "78", "91", "92", "93", "94", "95")
+DEPARTEMENTS = ["75"]
 # Output file of the generated trips.
-OUTPUT_FILENAME = "/home/ljavaudin/Projects/MetropolisIDF/output/trips.csv"
+OUTPUT_FILENAME = "/home/ljavaudin/Projects/MetropolisIDF/output/trips_paris.csv"
 # List of modes used to filter trips.
 MODE = ["car"]
 
@@ -134,7 +134,7 @@ def find_iris_origin_destination(trip_gdf, iris_gdf):
 
 if __name__ == "__main__":
     trip_gdf = get_trips()
-    iris_gdf = get_iris_polygons(IDF_DEP)
+    iris_gdf = get_iris_polygons(DEPARTEMENTS)
     trip_gdf = find_iris_origin_destination(trip_gdf, iris_gdf)
     # Set source and target node id of the trips.
     zone_mapping = get_zone_mapping()

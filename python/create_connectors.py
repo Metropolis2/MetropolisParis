@@ -7,13 +7,13 @@ from scipy.spatial import distance_matrix
 from shapely.geometry import LineString
 
 # Path to the file with the pre-processed nodes.
-NODE_FILE = "./output/here_network/here_nodes.fgb"
+NODE_FILE = "./output/osm_network/osm_nodes.fgb"
 # Path to the file with the pre-processed edges.
-EDGE_FILE = "./output/here_network/here_edges.fgb"
+EDGE_FILE = "./output/osm_network/osm_edges.fgb"
 # Path to the IRIS shapefile with the geometries of the origin / destination zones.
 ZONE_FILE = "./data/contours_iris_france/CONTOURS-IRIS.shp"
 # Départements of the study area, used to filter the IRIS zones.
-IDF_DEP = ("75", "77", "78", "91", "92", "93", "94", "95")
+DEPARTEMENTS = ["75"]
 # CRS to use for the output file. Should be a projected coordinate system.
 METRIC_CRS = "epsg:2154"
 # The zone centroids are connected to nodes chosen among the DIST_RANK closest nodes.
@@ -25,9 +25,9 @@ CONNECTOR_LANES = 1
 # Speed on the connectors, in km/h.
 CONNECTOR_SPEED = 30
 # File where the ZONE_ID -> NODE_ID map is saved.
-ZONE_ID_FILE = "./output/zone_id_map.csv"
+ZONE_ID_FILE = "./output/zone_id_map_paris.csv"
 # Path to the directory where the output node and edge files are stored.
-OUTPUT_DIR = "./output/here_network/"
+OUTPUT_DIR = "./output/osm_network/"
 
 print("Reading network files")
 
@@ -74,7 +74,7 @@ out_nodes = nodes.loc[nodes["out_degree"] > 0]
 print("Reading zones")
 
 zones = gpd.read_file(ZONE_FILE)
-zones = zones.loc[zones["INSEE_COM"].str[:2].isin(IDF_DEP)].copy()
+zones = zones.loc[zones["INSEE_COM"].str[:2].isin(DEPARTEMENTS)].copy()
 zones.drop(columns=["INSEE_COM", "NOM_COM", "IRIS", "NOM_IRIS", "TYP_IRIS"], inplace=True)
 zones["CODE_IRIS"] = zones["CODE_IRIS"].astype(np.int64)
 
@@ -236,6 +236,7 @@ for i, (zone_id, zone) in enumerate(zones.iterrows()):
                 "target_index": node_id,
                 "geometry": geom,
                 "length": length,
+                "neighbor_count": 0,
             }
             out_connectors.append(connector)
 
@@ -262,7 +263,6 @@ print(
     )
 )
 connectors = pd.concat((out_connectors, in_connectors), ignore_index=True)
-connectors["LINK_ID"] = 0
 edges = gpd.GeoDataFrame(pd.concat((edges, connectors), ignore_index=True)).reset_index()
 edges.to_file(os.path.join(OUTPUT_DIR, "edges.fgb"), driver="FlatGeobuf")
 

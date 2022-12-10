@@ -1,9 +1,9 @@
 import pandas as pd
 
 # Path to the file where the trips are stored.
-TRIP_FILENAME = "/home/ljavaudin/Projects/MetropolisIDF/output/trips.csv"
+TRIP_FILENAME = "/home/ljavaudin/Projects/MetropolisIDF/output/trips_paris.csv"
 # Output file of the generated trips.
-OUTPUT_FILENAME = "/home/ljavaudin/Projects/MetropolisIDF/output/trips_filtered.csv"
+OUTPUT_FILENAME = "/home/ljavaudin/Projects/MetropolisIDF/output/trips_paris_filtered.csv"
 # Returns only trips whose departure time is later than this value (in seconds after midnight).
 START_TIME = 3.0 * 3600.0
 # Returns only trips whose arrival time is earlier than this value (in seconds after midnight).

@@ -117,7 +117,6 @@ if len(connected_nodes) < G.number_of_nodes():
 
 print("Number of edges: {}".format(len(gdf)))
 
-
 while False:
     print("Simplifying the network...")
     middle_nodes = filter(
@@ -164,6 +163,12 @@ while False:
     print("Number of edges: {}".format(len(gdf)))
 
 gdf.drop(columns=["id"], inplace=True)
+
+print('Counting neighbors...')
+
+neighbor_count = pd.Series({n: G.degree[n] for n in G.nodes})
+neighbor_count.name = 'neighbor_count'
+gdf = gdf.merge(neighbor_count, how='left', left_on='target', right_index=True)
 
 print("Generating the nodes...")
 
