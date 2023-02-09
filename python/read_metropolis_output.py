@@ -13,13 +13,13 @@ from matplotlib.colors import to_hex
 import zstandard as zstd
 
 # Path to the input agent file.
-AGENT_INPUT_FILENAME = "./output/server_runs/19/agents.json"
+AGENT_INPUT_FILENAME = "./output/server_runs/23/agents.json"
 # Path to the output agent-results file.
-AGENT_RESULTS_FILENAME = "./output/server_runs/19/agent_results.json.zst"
+AGENT_RESULTS_FILENAME = "./output/server_runs/23/agent_results.json.zst"
 # Path to the output weights results file.
-WEIGHT_RESULTS_FILENAME = "./output/server_runs/19/weight_results.json.zst"
+WEIGHT_RESULTS_FILENAME = "./output/server_runs/23/weight_results.json.zst"
 # Path to the output skim results file.
-SKIM_RESULTS_FILENAME = "./output/server_runs/21/skim_results.json.zst"
+SKIM_RESULTS_FILENAME = "./output/server_runs/23/skim_results.json.zst"
 # Path to the directory where OD pairs travel times are stored.
 TT_DIR = "./output/ahmed/"
 # Path to the directory where EGT data is stored.
@@ -177,7 +177,9 @@ def get_agent_map(agent, edges):
     origin_coords = edges_taken.loc[route[0]["edge"], "geometry"].coords[0][::-1]
     destination_coords = edges_taken.loc[route[-1]["edge"], "geometry"].coords[-1][::-1]
 
-    m = folium.Map(location=mean_location, zoom_start=13, tiles="OpenStreetMap")
+    m = folium.Map(location=mean_location, zoom_start=13,
+                   tiles="https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=ReELeWjLPpebJEd9Ss1D",
+                   attr="\u003ca href=\"https://www.maptiler.com/copyright/\" target=\"_blank\"\u003e\u0026copy; MapTiler\u003c/a\u003e \u003ca href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\"\u003e\u0026copy; OpenStreetMap contributors\u003c/a\u003e")
     Circle(
         location=origin_coords,
         radius=30,
@@ -196,16 +198,21 @@ def get_agent_map(agent, edges):
         color="#245CE5",
         fill_color="#E52424",
     ).add_to(m)
-    for leg in route:
+    for i in range(len(route)):
+        leg = route[i]
         edge = edges_taken.loc[leg["edge"]]
         edge_coords = list(edge["geometry"].coords)
         edge_coords = [p[::-1] for p in edge_coords]
-        edge_tt = leg["edge_exit"] - leg["edge_entry"]
+        if i + 1 < len(route):
+            edge_exit = route[i+1]["edge_entry"]
+        else:
+            edge_exit = agent['arrival_time']
+        edge_tt = edge_exit - leg["edge_entry"]
         congestion = edge["fftt"] / edge_tt
         color = to_hex(colormap(congestion))
         tooltip = "From {} to {}<br>Travel time: {}<br>Free-flow tt: {}".format(
             get_time_str(leg["edge_entry"]),
-            get_time_str(leg["edge_exit"]),
+            get_time_str(edge_exit),
             get_tt_str(edge_tt),
             get_tt_str(edge["fftt"]),
         )
@@ -297,30 +304,35 @@ def plot_departure_times_cdf(agent_df, egt_data=None):
     return fig
 
 
-def plot_arrival_times_cdf(agent_df, egt_data=None):
-    fig, ax = plt.subplots()
+def plot_arrival_times_cdf(agent_df, egt_data=None, m=None, M=None):
+    fig, ax = plt.subplots(figsize=(6, 4))
     if egt_data is not None:
         weights = [np.repeat(1, len(agent_df)), egt_data["POIDSP"]]
         ax.hist(
             [agent_df["arrival_time"] / 3600, egt_data["ta"] / 3600],
-            bins=300,
+            bins=1000,
             weights=weights,
             density=True,
             cumulative=True,
             histtype="step",
             label=["Metropolis", "EGT"],
         )
-        ax.legend()
+        ax.legend(loc='upper left')
     else:
         ax.hist(
             agent_df["arrival_time"] / 3600,
-            bins=300,
+            bins=1000,
             density=True,
             cumulative=True,
             histtype="step",
         )
     ax.set_xlabel("Arrival time (h)")
     ax.set_ylabel("Cumulative density")
+    if m is not None:
+        ax.set_xlim(left=m)
+    if M is not None:
+        ax.set_xlim(right=M)
+    ax.set_ylim(0, 1)
     fig.tight_layout()
     return fig
 
@@ -560,11 +572,11 @@ def plot_exp_travel_time_scatter(agent_df, bound=0, bound_per=0, M=None):
     ax.scatter(agent_df["exp_travel_time"] / 60, agent_df["travel_time"] / 60, alpha=0.01)
     ax.plot([0, M], [0, M], color="black")
     if bound:
-        ax.plot([bound, M + bound], [0, M], color="red")
-        ax.plot([0, M], [bound, M + bound], color="red")
+        ax.plot([bound, M + bound], [0, M], color="black", linestyle='dashed')
+        ax.plot([0, M], [bound, M + bound], color="black", linestyle='dashed')
     if bound_per:
-        ax.plot([0, M * bound_per], [0, M], color="red")
-        ax.plot([0, M], [0, M * bound_per], color="red")
+        ax.plot([0, M * bound_per], [0, M], color="black", linestyle='dashed')
+        ax.plot([0, M], [0, M * bound_per], color="black", linestyle='dashed')
     ax.set_xlabel("Expected travel time (min)")
     ax.set_ylabel("Actual travel time (min)")
     ax.set_xlim(0, M)
@@ -574,7 +586,7 @@ def plot_exp_travel_time_scatter(agent_df, bound=0, bound_per=0, M=None):
 
 
 def plot_travel_time_hist(agent_df, egt_data=None, bins=None, M=None):
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(6, 4))
     if M is None:
         M = agent_df["travel_time"].max() / 60
     if bins is None:
@@ -583,22 +595,52 @@ def plot_travel_time_hist(agent_df, egt_data=None, bins=None, M=None):
         weights = [np.repeat(1, len(agent_df)), egt_data["POIDSP"]]
         ax.hist(
             [agent_df["travel_time"] / 60, egt_data["tt"] / 60],
-            bins=300,
+            bins=(M or 100) * 10,
             weights=weights,
             density=True,
             cumulative=True,
             histtype="step",
             label=["Metropolis", "EGT"],
         )
-        ax.legend()
+        ax.legend(loc='lower right')
         ax.grid()
-        ax.set_xlabel("Cumulative density")
+        ax.set_ylabel("Cumulative density")
         ax.set_ylim(0, 1)
     else:
         ax.hist(agent_df["travel_time"] / 60, bins=bins)
-        ax.set_xlabel("Travel time (min)")
-    ax.set_ylabel("Count")
+        ax.set_ylabel("Count")
+    ax.set_xlabel("Travel time (min)")
     ax.set_xlim(0, M)
+    fig.tight_layout()
+    return fig
+
+
+def plot_weight_travel_time_function(edge_id, weights):
+    ttf = weights["road_network"][0][edge_id]
+    xs = np.array([p["x"] for p in ttf["points"]])
+    ys = np.array([p["y"] for p in ttf["points"]])
+    m = ttf["period"][0]
+    M = ttf["period"][1]
+    fig, ax = plt.subplots()
+    ax.plot(xs / 3600, ys, "-o", markersize=1.5, alpha=0.7)
+    ax.set_xlim(m / 3600, M / 3600)
+    ax.set_xlabel("Departure time (h)")
+    ax.set_ylabel("Travel time (s)")
+    fig.tight_layout()
+    return fig
+
+
+def plot_od_travel_time_function(origin, destination, skims):
+    ttf = skims["road_network"][0]["profile_query_cache"][str(origin)][str(destination)]
+    xs = np.array([p["x"] for p in ttf["points"]])
+    ys = np.array([p["y"] for p in ttf["points"]])
+    m = ttf["period"][0]
+    M = ttf["period"][1]
+    fig, ax = plt.subplots()
+    ax.plot(xs / 3600, ys / 60, "-o", markersize=1.5, alpha=0.7)
+    ax.set_xlim(m / 3600, M / 3600)
+    ax.set_xlabel("Departure time (h)")
+    ax.set_ylabel("Travel time (min.)")
     fig.tight_layout()
     return fig
 

@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 import osmium
+import networkx as nx
 from geojson import Point, LineString, Feature, FeatureCollection
 from haversine import haversine_vector, Unit
 from shapely.ops import linemerge
@@ -323,6 +324,32 @@ class Writer(osmium.SimpleHandler):
         nodes = gpd.GeoDataFrame.from_features(node_collection)
         edges = gpd.GeoDataFrame.from_features(edge_collection)
         edges = self.count_neighbors(edges)
+
+        print("Building graph...")
+
+        G = nx.DiGraph()
+        G.add_edges_from(
+            map(
+                lambda f: (f["properties"]["source"], f["properties"]["target"], f["properties"]),
+                edges.iterfeatures(),
+            )
+        )
+        # Find the nodes of the largest weakly connected component.
+        connected_nodes = max(nx.weakly_connected_components(G), key=len)
+        if len(connected_nodes) < G.number_of_nodes():
+            print(
+                "Warning: discarding {} nodes disconnected from the main graph".format(
+                    G.number_of_nodes() - len(connected_nodes)
+                )
+            )
+            G.remove_nodes_from(set(G.nodes).difference(connected_nodes))
+            edges = edges.loc[edges["source"].isin(connected_nodes)]
+            edges = edges.loc[edges["target"].isin(connected_nodes)].copy()
+            nodes = nodes.loc[nodes["id"].isin(connected_nodes)].copy()
+
+        print("Number of edges: {}".format(len(edges)))
+
+
         if simplify:
             nodes, edges = self.simplify(nodes, edges)
         self.nodes = nodes
