@@ -6,17 +6,16 @@ import pandas as pd
 import geopandas as gpd
 
 # Path to the directory where the synthetic population files from Eqasim are stored.
-EQASIM_OUTPUT = "/home/ljavaudin/Projects/MetropolisIDF/data/synthetic_population/"
-# Path to the file where the mapping between IRIS zone ids and node ids is stored.
-ZONE_ID_FILE = "./output/zone_id_map_paris.csv"
+EQASIM_OUTPUT = "./data/synthetic_population/"
 # Path to the IRIS Shapefile.
-IRIS_FILE = "/home/ljavaudin/Projects/MetropolisIDF/data/contours_iris_france/"
+IRIS_FILE = "./data/contours_iris_france/"
 # Départements in the studied area, used to filter IRIS zones.
-DEPARTEMENTS = ["75"]
+DEPARTEMENTS = ["75", "77", "78", "91", "92", "93", "94", "95"]
 # Output file of the generated trips.
-OUTPUT_FILENAME = "/home/ljavaudin/Projects/MetropolisIDF/output/trips_paris.csv"
+OUTPUT_FILENAME = "./output/trips_full.csv"
 # List of modes used to filter trips.
-MODE = ["car"]
+# Set to `None` to include all trips.
+MODE = None
 
 
 def get_households():
@@ -48,16 +47,13 @@ def get_persons():
     )
 
 
-def get_zone_mapping():
-    return pd.read_csv(ZONE_ID_FILE)
-
-
 def get_trips():
     """Returns a gpd.GeoDataFrame with the list of trips, for the filtered modes and time."""
     print("Reading synthetic population trips")
     gdf = gpd.read_file(os.path.join(EQASIM_OUTPUT, "ile_de_france_trips.gpkg"))
-    # Filter trips with a valid mode.
-    gdf = gdf.loc[gdf["mode"].isin(MODE)].copy()
+    if not MODE is None:
+        # Filter trips with a valid mode.
+        gdf = gdf.loc[gdf["mode"].isin(list(MODE))].copy()
     gdf["purpose"] = gdf["preceding_purpose"] + " -> " + gdf["following_purpose"]
     gdf["travel_time"] = gdf["arrival_time"] - gdf["departure_time"]
     gdf["origin"] = gdf.geometry.apply(lambda g: Point(g.coords[0]))
@@ -82,7 +78,7 @@ def get_iris_polygons(departements):
     print("Reading IRIS zones")
     gdf = gpd.read_file(IRIS_FILE)
     gdf["dep"] = gdf["INSEE_COM"].str[:2]
-    gdf = gdf.loc[gdf["dep"].isin(departements)]
+    gdf = gdf.loc[gdf["dep"].isin(list(departements))]
     gdf = gdf[["CODE_IRIS", "geometry"]].copy()
     gdf["CODE_IRIS"] = gdf["CODE_IRIS"].astype(int)
     return gdf
@@ -136,26 +132,6 @@ if __name__ == "__main__":
     trip_gdf = get_trips()
     iris_gdf = get_iris_polygons(DEPARTEMENTS)
     trip_gdf = find_iris_origin_destination(trip_gdf, iris_gdf)
-    # Set source and target node id of the trips.
-    zone_mapping = get_zone_mapping()
-    trip_gdf = (
-        trip_gdf.merge(
-            zone_mapping.loc[zone_mapping["in"], ["node_id", "CODE_IRIS"]],
-            left_on="iris_destination",
-            right_on="CODE_IRIS",
-        )
-        .rename(columns={"node_id": "destination_id"})
-        .drop(columns="CODE_IRIS")
-    )
-    trip_gdf = (
-        trip_gdf.merge(
-            zone_mapping.loc[~zone_mapping["in"], ["node_id", "CODE_IRIS"]],
-            left_on="iris_origin",
-            right_on="CODE_IRIS",
-        )
-        .rename(columns={"node_id": "origin_id"})
-        .drop(columns="CODE_IRIS")
-    )
     # Merge.
     household_df = get_households()
     person_df = get_persons()

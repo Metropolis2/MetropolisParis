@@ -8,9 +8,9 @@ import geopandas as gpd
 # Path to the directory where the node and edge files are stored.
 ROAD_NETWORK_DIR = "./output/osm_network/"
 # Path to the file where the trip data is stored.
-TRIPS_FILE = "./output/trips_paris_filtered.csv"
+TRIPS_FILE = "./output/trips_filtered.csv"
 # Path to the directory where the simulation input should be stored.
-OUTPUT_DIR = "./output/paris_run/"
+OUTPUT_DIR = "./output/next_run/"
 # Vehicle length in meters.
 VEHICLE_LENGTH = 10.0 * 10.0
 # Vehicle passenger-car equivalent.
@@ -72,6 +72,7 @@ RNG = np.random.default_rng(SEED)
 # Parameters to use for the simulation.
 PARAMETERS = {
     "period": PERIOD,
+    "init_iteration_counter": 1,
     "learning_model": {
         "type": "Exponential",
         "value": {
@@ -111,6 +112,21 @@ PARAMETERS = {
 
 print("Reading edges")
 edges = gpd.read_file(os.path.join(ROAD_NETWORK_DIR, "edges.fgb"))
+
+# Removing duplicate edges.
+st_count = edges.groupby(['source_index', 'target_index'])['index'].count()
+to_remove = set()
+for s, t in st_count.loc[st_count > 1].index:
+    dupl = edges.loc[(edges['source_index'] == s) & (edges['target_index'] == t)]
+    # Keep only the edge with the smallest travel time.
+    tt = dupl['length'] / (dupl['speed'] / 3.6)
+    id_min = tt.index[tt.argmin()]
+    for i in dupl.index:
+        if i != id_min:
+            to_remove.add(i)
+if to_remove:
+    print('Warning. Removing {} duplicate edges.'.format(len(to_remove)))
+    edges.drop(labels=to_remove, inplace=True)
 
 print("Creating Metropolis road network")
 metro_edges = list()
@@ -162,8 +178,41 @@ trips = pd.read_csv(TRIPS_FILE)
 print("Generating agents")
 random_u = iter(RNG.uniform(size=len(trips)))
 agents = list()
-for key, row in trips.iterrows():
-    t_star = T_STAR_FUNC(row["arrival_time"])
+for person_id, idx in trips.groupby('person_id').groups.items():
+    legs = list()
+    prev_ta = None
+    for key, trip in trips.loc[idx].iterrows():
+        t_star = T_STAR_FUNC(trip["arrival_time"])
+        leg = {
+            "travel_utility": {
+                "type": "Polynomial",
+                "value": {
+                    "b": -ALPHA / 3600.0,
+                }
+            },
+            "schedule_utility": {
+                "type": "AlphaBetaGamma",
+                "value": {
+                    "beta": BETA / 3600.0,
+                    "gamma": GAMMA / 3600.0,
+                    "t_star_high": t_star + DELTA / 2.0,
+                    "t_star_low": t_star - DELTA / 2.0,
+                },
+            },
+            "class": {
+                "type": "Road",
+                "value": {
+                    "origin": trip['origin_id'],
+                    "destination": trip['destination_id'],
+                    "vehicle": 0,
+                },
+            },
+        }
+        if not prev_ta is None:
+            # Set stopping time of previous leg.
+            legs[-1]["stopping_time"] = trip['departure_time'] - prev_ta
+        prev_ta = trip['arrival_time']
+        legs.append(leg)
     if ENDOGENOUS_DEPARTURE_TIME:
         departure_time_model = {
             "type": "ContinuousChoice",
@@ -181,33 +230,17 @@ for key, row in trips.iterrows():
     else:
         departure_time_model = {
             "type": "Constant",
-            "value": row["departure_time"],
+            "value": trips.loc[idx[0], "departure_time"],
         }
     car_mode = {
-        "type": "Road",
+        "type": "Trip",
         "value": {
-            "origin": row["origin_id"],
-            "destination": row["destination_id"],
-            "vehicle": 0,
-            "utility_model": {
-                "type": "Proportional",
-                "value": -ALPHA / 3600.0,
-            },
+            "legs": legs,
             "departure_time_model": departure_time_model,
         },
     }
     agent = {
-        "id": key,
-        "schedule_utility": {
-            "type": "AlphaBetaGamma",
-            "value": {
-                "beta": BETA / 3600.0,
-                "gamma": GAMMA / 3600.0,
-                "t_star_high": t_star + DELTA / 2.0,
-                "t_star_low": t_star - DELTA / 2.0,
-                "desired_arrival": True,
-            },
-        },
+        "id": person_id,
         "modes": [car_mode],
     }
     agents.append(agent)

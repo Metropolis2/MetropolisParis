@@ -21,7 +21,7 @@ Details:
 
 - The edges with `FUNC_CLASS <= 4` are selected.
 - The number of lanes for edges whose given number of lanes is 0 is set to 1.
-- Only the largest weakly connected component of the resulting graph is kept (i.e., isolated edges are removed).
+- Only the largest strongly connected component of the resulting graph is kept (i.e., isolated edges are removed).
 
 ### Step 2: Create connectors
 
@@ -62,7 +62,6 @@ Details:
 - Input:
   - Output of the [synthetic population generation](https://github.com/eqasim-org/ile-de-france)
   - IGN Shapefile of [IRIS zones](https://geoservices.ign.fr/contoursiris)
-  - CSV file that maps IRIS zone ids to road-network node ids (from Step 2)
 - Output: CSV file with a list of trip, including the origin / destination IRIS zone and node id and the characteristics of the agent
 
 The trips are generated using a synthetic population for Île-de-France (built with various datasets such as INSEE census, transport surveys and infrastructure databases).
@@ -70,7 +69,9 @@ The trips are generated using a synthetic population for Île-de-France (built w
 ### Step 4: Filter the population
 
 - Script: `python/filter_population.py`
-- Input: CSV file with a list of trips (from Step 3)
+- Input:
+  - CSV file with a list of trips (from Step 3)
+  - CSV file that maps IRIS zone ids to road-network node ids (from Step 2)
 - Output: CSV file with the filtered list of trips
 
 The trips generated in Step 3 are filtered to keep only the trips that should be simulated.
@@ -81,8 +82,6 @@ Details:
 
 - We filter trips by car that occurs within the time window 3AM--10AM.
 - Intra-zonal trips are removed because they are not used in Metropolis (they represent 7.73 % of total travel time, mostly because of round trips).
-- For each person, only the trip with the largest travel time is kept (removing 9.36 % of remaining total travel time).
-  When Metropolis will be able to run with intermediary stops, these trips could be kept.
 
 ### Step 5: Generate Metropolis input
 
@@ -128,3 +127,17 @@ This script provides many functions to analyse the output of the simulator (draw
   - CSV file that maps IRIS zone ids to road-network node ids (from Step 2)
 
 This script provides a function that returns the IRIS zone and Metropolis zone from geographic coordinates.
+
+### Extra script: Write Routing script input
+
+- Script: `python/write_routing_graph.py`
+- Input: FlatGeobuf file with the edges of the road network (from Step 2)
+- Output: JSON graph file compatible with the routing script
+
+### Extra script: Migration to Metropolis 0.2.x
+
+- Script: `python/migrate_to_0_2.py`
+- Input: JSON Agents file compatible with Metropolis 0.1.x
+- Output: JSON Agents file compatible with Metropolis 0.2.x
+
+This script converts an outdated Agents Input file into the new input format.

@@ -13,7 +13,7 @@ from shapely.geometry import MultiLineString
 from collections import defaultdict
 
 # Path to the OSM PBF file.
-OSM_FILE = "./data/osm/paris-filtered.osm.pbf"
+OSM_FILE = "./data/osm/ile-de-france-latest.osm.pbf"
 # Path to the FlatGeobuf file where nodes should be stored.
 NODE_FILE = "./output/osm_network/osm_nodes.fgb"
 # Path to the FlatGeobuf file where edges should be stored.
@@ -29,13 +29,13 @@ VALID_HIGHWAYS = (
     "trunk_link",
     "primary_link",
     "secondary_link",
-    "tertiary",
-    "tertiary_link",
-    'residential',
-    'living_street',
-    'unclassified',
-    'road',
-    'service',
+    #  "tertiary",
+    #  "tertiary_link",
+    #  'residential',
+    #  'living_street',
+    #  'unclassified',
+    #  'road',
+    #  'service',
 )
 # Road type id to use for each highway tag.
 ROADTYPE_TO_ID = {
@@ -274,8 +274,8 @@ class Writer(osmium.SimpleHandler):
             back_edge_id = self.counter
             self.counter += 1
 
-        # Compute length in kilometers.
-        length = haversine_vector(coords[:-1], coords[1:], Unit.KILOMETERS).sum()
+        # Compute length in meters.
+        length = haversine_vector(coords[:-1], coords[1:], Unit.KILOMETERS).sum() * 1000
 
         self.edges.append(
             Feature(
@@ -335,7 +335,7 @@ class Writer(osmium.SimpleHandler):
             )
         )
         # Find the nodes of the largest weakly connected component.
-        connected_nodes = max(nx.weakly_connected_components(G), key=len)
+        connected_nodes = max(nx.strongly_connected_components(G), key=len)
         if len(connected_nodes) < G.number_of_nodes():
             print(
                 "Warning: discarding {} nodes disconnected from the main graph".format(

@@ -103,8 +103,8 @@ G.add_edges_from(
         gdf.iterfeatures(),
     )
 )
-# Find the nodes of the largest weakly connected component.
-connected_nodes = max(nx.weakly_connected_components(G), key=len)
+# Find the nodes of the largest strongly connected component.
+connected_nodes = max(nx.strongly_connected_components(G), key=len)
 if len(connected_nodes) < G.number_of_nodes():
     print(
         "Warning: discarding {} nodes disconnected from the main graph".format(

@@ -13,7 +13,7 @@ EDGE_FILE = "./output/osm_network/osm_edges.fgb"
 # Path to the IRIS shapefile with the geometries of the origin / destination zones.
 ZONE_FILE = "./data/contours_iris_france/CONTOURS-IRIS.shp"
 # Départements of the study area, used to filter the IRIS zones.
-DEPARTEMENTS = ["75"]
+DEPARTEMENTS = ["75", "77", "78", "91", "92", "93", "94", "95"]
 # CRS to use for the output file. Should be a projected coordinate system.
 METRIC_CRS = "epsg:2154"
 # The zone centroids are connected to nodes chosen among the DIST_RANK closest nodes.
@@ -25,7 +25,7 @@ CONNECTOR_LANES = 1
 # Speed on the connectors, in km/h.
 CONNECTOR_SPEED = 30
 # File where the ZONE_ID -> NODE_ID map is saved.
-ZONE_ID_FILE = "./output/zone_id_map_paris.csv"
+ZONE_ID_FILE = "./output/zone_id_map_osm.csv"
 # Path to the directory where the output node and edge files are stored.
 OUTPUT_DIR = "./output/osm_network/"
 
