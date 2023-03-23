@@ -146,17 +146,17 @@ def get_edges():
 
 
 def get_edge_with_congestion(edges, weights, bins):
-    array = np.empty((len(weights['road_network'][0]), len(bins)))
-    for i, w in enumerate(weights['road_network'][0]):
+    array = np.empty((len(weights["road_network"][0]), len(bins)))
+    for i, w in enumerate(weights["road_network"][0]):
         if isinstance(w, float):
             array[i, :] = w
         else:
-            (xs, ys) = np.array([(p['x'], p['y']) for p in w['points']]).T
+            (xs, ys) = np.array([(p["x"], p["y"]) for p in w["points"]]).T
             array[i, :] = np.interp(bins, xs, ys)
     array /= np.atleast_2d(array[:, 0]).T
     edges = edges.copy()
     for i in range(len(bins)):
-        col = f'TD{i}'
+        col = f"TD{i}"
         edges[col] = array[:, i]
         edges[col] = edges[col].astype(float)
     return edges
@@ -177,9 +177,12 @@ def get_agent_map(agent, edges):
     origin_coords = edges_taken.loc[route[0]["edge"], "geometry"].coords[0][::-1]
     destination_coords = edges_taken.loc[route[-1]["edge"], "geometry"].coords[-1][::-1]
 
-    m = folium.Map(location=mean_location, zoom_start=13,
-                   tiles="https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=ReELeWjLPpebJEd9Ss1D",
-                   attr="\u003ca href=\"https://www.maptiler.com/copyright/\" target=\"_blank\"\u003e\u0026copy; MapTiler\u003c/a\u003e \u003ca href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\"\u003e\u0026copy; OpenStreetMap contributors\u003c/a\u003e")
+    m = folium.Map(
+        location=mean_location,
+        zoom_start=13,
+        tiles="https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=ReELeWjLPpebJEd9Ss1D",
+        attr='\u003ca href="https://www.maptiler.com/copyright/" target="_blank"\u003e\u0026copy; MapTiler\u003c/a\u003e \u003ca href="https://www.openstreetmap.org/copyright" target="_blank"\u003e\u0026copy; OpenStreetMap contributors\u003c/a\u003e',
+    )
     Circle(
         location=origin_coords,
         radius=30,
@@ -204,9 +207,9 @@ def get_agent_map(agent, edges):
         edge_coords = list(edge["geometry"].coords)
         edge_coords = [p[::-1] for p in edge_coords]
         if i + 1 < len(route):
-            edge_exit = route[i+1]["edge_entry"]
+            edge_exit = route[i + 1]["edge_entry"]
         else:
-            edge_exit = agent['arrival_time']
+            edge_exit = agent["arrival_time"]
         edge_tt = edge_exit - leg["edge_entry"]
         congestion = edge["fftt"] / edge_tt
         color = to_hex(colormap(congestion))
@@ -226,41 +229,43 @@ def get_agent_dataframe(input_agents, agent_results):
     data = [
         {
             "id": a["id"],
-            "utility": a["utility"],
-            "departure_time": a["departure_time"],
-            "arrival_time": a["arrival_time"],
-            "expected_utility": a["pre_day_results"]["expected_utility"],
-            "expected_arrival_time": a["pre_day_results"]["choices"]["value"][
-                "expected_arrival_time"
-            ],
-            "road_time": a["mode_results"]["value"]["road_time"],
-            "in_bottleneck_time": a["mode_results"]["value"]["in_bottleneck_time"],
-            "out_bottleneck_time": a["mode_results"]["value"]["out_bottleneck_time"],
-            "nb_edges": len(a["mode_results"]["value"]["route"]),
+            "leg_id": i + 1,
+            "utility": l["travel_utility"] + l["schedule_utility"],
+            "departure_time": l["departure_time"],
+            "arrival_time": l["arrival_time"],
+            "expected_utility": a["expected_utility"],
+            "expected_arrival_time": l["class"]["value"].get("exp_arrival_time"),
+            "road_time": l["class"]["value"].get("road_time"),
+            "in_bottleneck_time": l["class"]["value"].get("in_bottleneck_time"),
+            "out_bottleneck_time": l["class"]["value"].get("out_bottleneck_time"),
+            "nb_edges": len(l["class"]["value"].get("route", [])),
         }
         for a in agent_results
+        for i, l in enumerate(a["mode_results"]["value"]["legs"])
     ]
     df = pd.DataFrame(data)
     data = [
         {
             "id": a["id"],
-            "origin": a["modes"][0]["value"]["origin"],
-            "destination": a["modes"][0]["value"]["destination"],
-            "beta": a["schedule_utility"]["value"]["beta"] * 3600,
-            "gamma": a["schedule_utility"]["value"]["gamma"] * 3600,
+            "leg_id": i + 1,
+            "origin": l["class"]["value"].get("origin"),
+            "destination": l["class"]["value"].get("destination"),
+            "beta": l.get("schedule_utility", {}).get("value", {}).get("beta", 0) * 3600,
+            "gamma": l.get("schedule_utility", {}).get("value", {}).get("gamma", 0) * 3600,
             "t_star": (
-                a["schedule_utility"]["value"]["t_star_low"]
-                + a["schedule_utility"]["value"]["t_star_high"]
+                l.get("schedule_utility", {}).get("value", {}).get("t_star_low", 0)
+                + l.get("schedule_utility", {}).get("value", {}).get("t_star_high", 0)
             )
             / 2,
-            "alpha": -a["modes"][0]["value"]["utility_model"]["value"] * 3600,
+            "alpha": -l.get("travel_utility", {}).get("value", {}).get("b", 0) * 3600,
             "u": a["modes"][0]["value"]["departure_time_model"]["value"]["choice_model"]["value"][
                 "u"
             ],
         }
         for a in input_agents
+        for i, l in enumerate(a["modes"][0]["value"]["legs"])
     ]
-    df = df.merge(pd.DataFrame(data), on="id", how="left")
+    df = df.merge(pd.DataFrame(data), on=["id", "leg_id"], how="left")
     df["delay"] = df["arrival_time"] - df["t_star"]
     df["exp_delay"] = df["expected_arrival_time"] - df["t_star"]
     df["delay_cost"] = -(df["beta"] / 3600) * np.minimum(df["delay"], 0.0) + (
@@ -317,7 +322,7 @@ def plot_arrival_times_cdf(agent_df, egt_data=None, m=None, M=None):
             histtype="step",
             label=["Metropolis", "EGT"],
         )
-        ax.legend(loc='upper left')
+        ax.legend(loc="upper left")
     else:
         ax.hist(
             agent_df["arrival_time"] / 3600,
@@ -572,11 +577,11 @@ def plot_exp_travel_time_scatter(agent_df, bound=0, bound_per=0, M=None):
     ax.scatter(agent_df["exp_travel_time"] / 60, agent_df["travel_time"] / 60, alpha=0.01)
     ax.plot([0, M], [0, M], color="black")
     if bound:
-        ax.plot([bound, M + bound], [0, M], color="black", linestyle='dashed')
-        ax.plot([0, M], [bound, M + bound], color="black", linestyle='dashed')
+        ax.plot([bound, M + bound], [0, M], color="black", linestyle="dashed")
+        ax.plot([0, M], [bound, M + bound], color="black", linestyle="dashed")
     if bound_per:
-        ax.plot([0, M * bound_per], [0, M], color="black", linestyle='dashed')
-        ax.plot([0, M], [0, M * bound_per], color="black", linestyle='dashed')
+        ax.plot([0, M * bound_per], [0, M], color="black", linestyle="dashed")
+        ax.plot([0, M], [0, M * bound_per], color="black", linestyle="dashed")
     ax.set_xlabel("Expected travel time (min)")
     ax.set_ylabel("Actual travel time (min)")
     ax.set_xlim(0, M)
@@ -602,7 +607,7 @@ def plot_travel_time_hist(agent_df, egt_data=None, bins=None, M=None):
             histtype="step",
             label=["Metropolis", "EGT"],
         )
-        ax.legend(loc='lower right')
+        ax.legend(loc="lower right")
         ax.grid()
         ax.set_ylabel("Cumulative density")
         ax.set_ylim(0, 1)
@@ -709,15 +714,16 @@ def plot_travel_time_comparison(origin, destination, skims, tt_data, od_pairs):
 
 
 def get_chevelus(origin, destination, agent_df, agent_results, edges):
-    agent_ids = agent_df.loc[(agent_df['origin'] == origin) & (agent_df['destination'] ==
-                                                               destination), 'id']
+    agent_ids = agent_df.loc[
+        (agent_df["origin"] == origin) & (agent_df["destination"] == destination), "id"
+    ]
     edge_counts = defaultdict(lambda: 0)
     for i in agent_ids:
-        route = agent_results[i]['mode_results']['value']['route']
+        route = agent_results[i]["mode_results"]["value"]["route"]
         for e in route:
-            edge_counts[e['edge']] += 1
-    edges = edges.loc[edges['index'].isin(edge_counts)].copy()
-    edges['count'] = pd.Series(edge_counts)
+            edge_counts[e["edge"]] += 1
+    edges = edges.loc[edges["index"].isin(edge_counts)].copy()
+    edges["count"] = pd.Series(edge_counts)
     return edges
 
 
